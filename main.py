@@ -32,6 +32,7 @@ from phone_agent.device_factory import DeviceType, get_device_factory, set_devic
 from phone_agent.model import ModelConfig
 from phone_agent.xctest import XCTestConnection
 from phone_agent.xctest import list_devices as list_ios_devices
+from risk_sdk import RiskSDK
 
 
 def check_system_requirements(
@@ -775,9 +776,13 @@ def main():
             lang=args.lang,
         )
 
+        risk_sdk = RiskSDK(log_dir="./risk_audit_logs")
+        risk_sdk.print_config()
+
         agent = PhoneAgent(
             model_config=model_config,
             agent_config=agent_config,
+            risk_sdk=risk_sdk,
         )
 
     # Print header

@@ -55,6 +55,9 @@ Thumbs.db
 /tmp/
 screenshots/
 
+# Risk SDK audit logs (runtime data, not for version control)
+risk_audit_logs/
+
 # Keep old files during transition
 call_model.py
 app_package_name.py

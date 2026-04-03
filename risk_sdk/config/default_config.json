@@ -1,0 +1,13 @@
+{
+  "version": "1.0",
+  "description": "风险管控 SDK 默认策略配置",
+  "thresholds": {
+    "auto_approve_max": 3,
+    "ask_confirm_max": 6
+  },
+  "zone_description": {
+    "approve_zone": "风险等级 1-3：自动放行，直接执行操作",
+    "ask_zone":     "风险等级 4-6：暂停执行，询问用户是否确认",
+    "reject_zone":  "风险等级 7-10：自动拦截，拒绝执行操作"
+  }
+}

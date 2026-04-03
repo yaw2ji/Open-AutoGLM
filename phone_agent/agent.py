@@ -12,6 +12,14 @@ from phone_agent.device_factory import get_device_factory
 from phone_agent.model import ModelClient, ModelConfig
 from phone_agent.model.client import MessageBuilder
 
+# 风险管控 SDK（可选依赖，不影响原有功能）
+try:
+    from risk_sdk import RiskSDK
+    _RISK_SDK_AVAILABLE = True
+except ImportError:
+    _RISK_SDK_AVAILABLE = False
+    RiskSDK = None  # type: ignore
+
 
 @dataclass
 class AgentConfig:
@@ -51,13 +59,17 @@ class PhoneAgent:
         agent_config: Configuration for the agent behavior.
         confirmation_callback: Optional callback for sensitive action confirmation.
         takeover_callback: Optional callback for takeover requests.
+        risk_sdk: Optional RiskSDK instance for risk classification and control.
+                  When provided, every action is evaluated before execution.
+                  Pass None (default) to disable risk control.
 
     Example:
         >>> from phone_agent import PhoneAgent
         >>> from phone_agent.model import ModelConfig
+        >>> from risk_sdk import RiskSDK
         >>>
         >>> model_config = ModelConfig(base_url="http://localhost:8000/v1")
-        >>> agent = PhoneAgent(model_config)
+        >>> agent = PhoneAgent(model_config, risk_sdk=RiskSDK())
         >>> agent.run("Open WeChat and send a message to John")
     """
 
@@ -67,6 +79,7 @@ class PhoneAgent:
         agent_config: AgentConfig | None = None,
         confirmation_callback: Callable[[str], bool] | None = None,
         takeover_callback: Callable[[str], None] | None = None,
+        risk_sdk: "RiskSDK | None" = None,
     ):
         self.model_config = model_config or ModelConfig()
         self.agent_config = agent_config or AgentConfig()
@@ -78,8 +91,12 @@ class PhoneAgent:
             takeover_callback=takeover_callback,
         )
 
+        # 风险管控 SDK（可选）
+        self.risk_sdk = risk_sdk
+
         self._context: list[dict[str, Any]] = []
         self._step_count = 0
+        self._current_task: str = ""  # 保存当前任务，供 SDK 分级使用
 
     def run(self, task: str) -> str:
         """
@@ -93,6 +110,7 @@ class PhoneAgent:
         """
         self._context = []
         self._step_count = 0
+        self._current_task = task  # 保存任务文本供风险管控 SDK 使用
 
         # First step with user prompt
         result = self._execute_step(task, is_first=True)
@@ -203,6 +221,31 @@ class PhoneAgent:
 
         # Remove image from context to save space
         self._context[-1] = MessageBuilder.remove_images_from_message(self._context[-1])
+
+        # ── 风险管控检查（意图理解后、执行前）────────────────────────────
+        if self.risk_sdk is not None and action.get("_metadata") != "finish":
+            risk_result = self.risk_sdk.check(
+                task=self._current_task,
+                action=action,
+                thinking=response.thinking,
+                step_count=self._step_count,
+            )
+            if not risk_result.allowed:
+                stop_msg = (
+                    f"[风险管控] 操作已拦截，智能体终止\n"
+                    f"   风险等级：{risk_result.risk_level} / 10\n"
+                    f"   拦截原因：{risk_result.reason}"
+                )
+                if self.agent_config.verbose:
+                    print(f"\n{stop_msg}\n")
+                return StepResult(
+                    success=False,
+                    finished=True,          # 直接终止，不再执行后续步骤
+                    action=action,
+                    thinking=response.thinking,
+                    message=stop_msg,
+                )
+        # ── 风险管控检查结束 ─────────────────────────────────────────────
 
         # Execute action
         try:
